@@ -1,0 +1,56 @@
+#apiVersion: apps/v1
+#kind: Deployment
+#metadata:
+#  name: spark-app
+#spec:
+#  replicas: 1
+#  selector:
+#    matchLabels:
+#      app: spark-app
+#  template:
+#    metadata:
+#      labels:
+#        app: spark-app
+#    spec:
+#      serviceAccountName: spark
+#      containers:
+#        - name: spark-app
+#          image: pairate/spark-app:0.0.1
+#          imagePullPolicy: Always
+#          command:
+#            - "/bin/bash"
+#            - "-c"
+#            - "/opt/spark/bin/spark-submit \
+#                 --class org.example.Main \
+#                 --master local[*] \
+#                 --deploy-mode client \
+#                 --conf spark.kubernetes.container.image=pairate/spark-app:0.0.1 \
+#                 /app/SparkStructured-1.0-SNAPSHOT.jar"
+##            - "/opt/spark/bin/spark-submit --master local[*] --deploy-mode client --class org.example.Main /app/SparkStructured.jar"
+#          #                 --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0 \
+#
+#          envFrom:
+#            - configMapRef:
+#                name: kafka-config
+#            - configMapRef:
+#                name: hdfs-config
+##  chmod +x /app/SparkStructured-1.0-SNAPSHOT.jar &&
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: spark-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: spark-app
+  template:
+    metadata:
+      labels:
+        app: spark-app
+    spec:
+      containers:
+        - name: spark-app-container
+          image: pairate/spark-app:0.0.1
+          imagePullPolicy: Always
