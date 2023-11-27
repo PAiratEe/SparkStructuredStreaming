@@ -17,17 +17,18 @@ COPY target/SparkStructured-1.0-SNAPSHOT.jar /opt/spark/work-dir
 #USER spark
 # Set the entry point
 #ENTRYPOINT ["/opt/entrypoint.sh"]
-RUN /opt/spark/bin/spark-submit \
-      --master local[*] \
-      --deploy-mode client \
-      --class org.example.Main \
-      --packages org.apache.kafka:kafka-clients:3.5.0 \
-      --conf spark.driver.extraJavaOptions="-Divy.cache.dir=/tmp -Divy.home=/tmp" \
-      --conf spark.executor.instances=5 \
-      --conf spark.kubernetes.authenticate.driver.serviceAccountName=spark \
-      --conf spark.kubernetes.container.image=pairate\spark-app:0.0.1 \
-      --conf spark.kafka.bootstrap.servers=kafka-service:9092 \
-      /opt/spark/work-dir/SparkStructured-1.0-SNAPSHOT.jar
+#RUN /opt/spark/bin/spark-submit \
+#      --master local[*] \
+#      --deploy-mode client \
+#      --class org.example.Main \
+#      --packages org.apache.kafka:kafka-clients:3.5.0 \
+#      --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0 \
+#      --conf spark.driver.extraJavaOptions="-Divy.cache.dir=/tmp -Divy.home=/tmp" \
+#      --conf spark.executor.instances=5 \
+#      --conf spark.kubernetes.authenticate.driver.serviceAccountName=spark \
+#      --conf spark.kubernetes.container.image=pairate\spark-app:0.0.1 \
+#      --conf spark.kafka.bootstrap.servers=10.101.221.105:9092 \
+#      /opt/spark/work-dir/SparkStructured-1.0-SNAPSHOT.jar
 
 
 

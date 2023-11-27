@@ -1,10 +1,10 @@
 package org.example
 
 import org.apache.kafka.clients.producer.{KafkaProducer, ProducerRecord}
+import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.streaming.Trigger
 import org.apache.spark.sql.types._
-import org.apache.spark.sql.{DataFrame, SparkSession}
 
 import java.util.Properties
 
@@ -24,12 +24,12 @@ object Main {
 
 
     val props = new Properties()
-    props.put("bootstrap.servers", "kafka-service:9092")
+    props.put("bootstrap.servers", "10.110.241.86:9092")
     props.put("key.serializer", "org.apache.kafka.common.serialization.StringSerializer")
     props.put("value.serializer", "org.apache.kafka.common.serialization.StringSerializer")
 
-    val kafkaServer = "kafka-service:9092"
-    val kafkaTopic = "minikube-topic"
+    val kafkaServer = "10.110.241.86:9092"
+    val kafkaTopic = "wikimedia_recentchange2"
 
     val maxConnectionAttempts = 10
     var connectionAttempt = 0
@@ -108,7 +108,8 @@ object Main {
         .select("json.*")
       val query = parsedDF.writeStream
         .trigger(Trigger.ProcessingTime("1 second"))
-        .foreachBatch(processBatch _)
+//        .foreachBatch(processBatch _)
+        .format("console")
         .start()
       query.awaitTermination()
     } catch {
@@ -117,17 +118,19 @@ object Main {
         val record = new ProducerRecord[String, String](kafkaTopic, kafkaDF.toString())
         producer.send(record)
     }
+    finally {}
 
-    def processBatch(df: DataFrame, batchId: Long): Unit = {
-      df.write
-        .format("parquet")
-        .mode("append")
-        .save("hdfs://localhost:9000/newKafkaTemplate/")
-    }
-
-    val query = parsedDF.writeStream
-      .trigger(Trigger.ProcessingTime("10 seconds"))
-      .foreachBatch(processBatch _)
-      .start()
+//    def processBatch(df: DataFrame, batchId: Long): Unit = {
+//      df.write
+//        .format("parquet")
+//        .mode("append")
+//        .save("hdfs://localhost:9000/newKafkaTemplate/")
+//    }
+//
+//    val query = parsedDF.writeStream
+//      .trigger(Trigger.ProcessingTime("10 seconds"))
+//      .foreachBatch(processBatch _)
+//      .format("console")
+//      .start()
   }
 }

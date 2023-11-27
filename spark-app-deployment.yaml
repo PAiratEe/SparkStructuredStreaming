@@ -1,3 +1,44 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: spark-app
+#  namespace: kafka
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: spark-app
+  template:
+    metadata:
+      labels:
+        app: spark-app
+    spec:
+      containers:
+        - name: spark-app
+          image: pairate/spark-app:0.0.1
+          imagePullPolicy: Always
+          command:
+            - "/bin/bash"
+            - "-c"
+            - "/opt/spark/bin/spark-submit \
+                --master local[*] \
+                --deploy-mode client \
+                --class org.example.Main \
+                --packages org.apache.kafka:kafka-clients:3.5.0 \
+                --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0 \
+                --conf spark.driver.extraJavaOptions=\"-Divy.cache.dir=/tmp -Divy.home=/tmp\" \
+                --conf spark.executor.instances=5 \
+                --conf spark.kubernetes.container.image=pairate/spark-app:0.0.1 \
+                --conf spark.kafka.bootstrap.servers=10.110.241.86:9092 \
+                /opt/spark/work-dir/SparkStructured-1.0-SNAPSHOT.jar"
+
+#            - "/opt/spark/bin/spark-submit \
+#                 --class org.example.Main \
+#                 --master local[*] \
+#                 --deploy-mode client \
+#                 --conf spark.kubernetes.container.image=pairate/spark-app:0.0.1 \
+#                 /app/SparkStructured-1.0-SNAPSHOT.jar"
+#
 #apiVersion: apps/v1
 #kind: Deployment
 #metadata:
@@ -12,45 +53,7 @@
 #      labels:
 #        app: spark-app
 #    spec:
-#      serviceAccountName: spark
 #      containers:
-#        - name: spark-app
+#        - name: spark-app-container
 #          image: pairate/spark-app:0.0.1
 #          imagePullPolicy: Always
-#          command:
-#            - "/bin/bash"
-#            - "-c"
-#            - "/opt/spark/bin/spark-submit \
-#                 --class org.example.Main \
-#                 --master local[*] \
-#                 --deploy-mode client \
-#                 --conf spark.kubernetes.container.image=pairate/spark-app:0.0.1 \
-#                 /app/SparkStructured-1.0-SNAPSHOT.jar"
-##            - "/opt/spark/bin/spark-submit --master local[*] --deploy-mode client --class org.example.Main /app/SparkStructured.jar"
-#          #                 --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0 \
-#
-#          envFrom:
-#            - configMapRef:
-#                name: kafka-config
-#            - configMapRef:
-#                name: hdfs-config
-##  chmod +x /app/SparkStructured-1.0-SNAPSHOT.jar &&
-
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: spark-app
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: spark-app
-  template:
-    metadata:
-      labels:
-        app: spark-app
-    spec:
-      containers:
-        - name: spark-app-container
-          image: pairate/spark-app:0.0.1
-          imagePullPolicy: Always
