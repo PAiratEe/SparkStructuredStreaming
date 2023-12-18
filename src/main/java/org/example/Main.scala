@@ -17,18 +17,18 @@ object Main {
 //      .master("k8s://http://192.168.64.2:30081")
       .master("local[*]")
       .config("spark.executor.memory", "1g")
-//      .config("spark.kubernetes.authenticate.driver.serviceAccountName", "spark")
-//      .config("spark.kubernetes.container.image", "spark-master-5879cfb9dd-5k5kt")
       .config("spark.executor.instances", "5")
+//      .config("spark.metrics.namespace", "default")
+//      .config("spark.metrics.conf", "src/main/resources/metrics.properties")
       .getOrCreate()
 
 
     val props = new Properties()
-    props.put("bootstrap.servers", "10.110.241.86:9092")
+    props.put("bootstrap.servers", "10.244.0.143:9092")
     props.put("key.serializer", "org.apache.kafka.common.serialization.StringSerializer")
     props.put("value.serializer", "org.apache.kafka.common.serialization.StringSerializer")
 
-    val kafkaServer = "10.110.241.86:9092"
+    val kafkaServer = "10.244.0.143:9092"
     val kafkaTopic = "wikimedia_recentchange2"
 
     val maxConnectionAttempts = 10
@@ -124,13 +124,13 @@ object Main {
 //      df.write
 //        .format("parquet")
 //        .mode("append")
-//        .save("hdfs://localhost:9000/newKafkaTemplate/")
+//        .save("hdfs://192.168.0.4:9000/newKafkaTemplate/")
 //    }
-//
-//    val query = parsedDF.writeStream
-//      .trigger(Trigger.ProcessingTime("10 seconds"))
+
+    val query = parsedDF.writeStream
+      .trigger(Trigger.ProcessingTime("10 seconds"))
 //      .foreachBatch(processBatch _)
-//      .format("console")
-//      .start()
+      .format("console")
+      .start()
   }
 }

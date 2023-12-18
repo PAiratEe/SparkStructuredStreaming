@@ -5,10 +5,12 @@ ENV SPARK_HOME=/opt/spark
 ENV PATH=$PATH:/opt/spark/bin
 
 # Set the working directory
-WORKDIR /opt/spark/work-dir
+WORKDIR /opt/spark
 
 # Copy your application JAR to the image
+COPY src/main/resources/metrics.properties /opt/spark/
 COPY target/SparkStructured-1.0-SNAPSHOT.jar /opt/spark/work-dir
+
 
 #COPY entrypoint.sh /opt/entrypoint.sh
 #USER root
