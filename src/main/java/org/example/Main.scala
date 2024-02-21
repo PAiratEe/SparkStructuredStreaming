@@ -1,7 +1,7 @@
 package org.example
 
 import org.apache.kafka.clients.producer.{KafkaProducer, ProducerRecord}
-import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.streaming.Trigger
 import org.apache.spark.sql.types._
@@ -24,11 +24,11 @@ object Main {
 
 
     val props = new Properties()
-    props.put("bootstrap.servers", "10.244.0.143:9092")
+    props.put("bootstrap.servers", "10.244.0.175:9092")
     props.put("key.serializer", "org.apache.kafka.common.serialization.StringSerializer")
     props.put("value.serializer", "org.apache.kafka.common.serialization.StringSerializer")
 
-    val kafkaServer = "10.244.0.143:9092"
+    val kafkaServer = "10.244.0.175:9092"
     val kafkaTopic = "wikimedia_recentchange2"
 
     val maxConnectionAttempts = 10
@@ -108,7 +108,7 @@ object Main {
         .select("json.*")
       val query = parsedDF.writeStream
         .trigger(Trigger.ProcessingTime("1 second"))
-//        .foreachBatch(processBatch _)
+        .foreachBatch(processBatch _)
         .format("console")
         .start()
       query.awaitTermination()
@@ -120,12 +120,12 @@ object Main {
     }
     finally {}
 
-//    def processBatch(df: DataFrame, batchId: Long): Unit = {
-//      df.write
-//        .format("parquet")
-//        .mode("append")
-//        .save("hdfs://192.168.0.4:9000/newKafkaTemplate/")
-//    }
+    def processBatch(df: DataFrame, batchId: Long): Unit = {
+      df.write
+        .format("parquet")
+        .mode("append")
+        .save("hdfs://192.168.64.2:9000/newKafkaTemplate/")
+    }
 
     val query = parsedDF.writeStream
       .trigger(Trigger.ProcessingTime("10 seconds"))

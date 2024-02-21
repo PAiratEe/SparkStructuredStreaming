@@ -2,7 +2,6 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: spark-app
-#  namespace: kafka
 spec:
   replicas: 1
   selector:
@@ -26,34 +25,22 @@ spec:
                 --class org.example.Main \
                 --packages org.apache.kafka:kafka-clients:3.5.0 \
                 --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0 \
+                --conf spark.kubernetes.driver.label.monitored-by=prometheus \
+                --conf spark.ui.prometheus.enabled=true \
+                --conf spark.executor.processTreeMetrics.enabled=true \
+                --conf spark.kubernetes.driver.annotation.prometheus.io/scrape=true \
+                --conf spark.kubernetes.driver.annotation.prometheus.io/path=/metrics/executors/prometheus/ \
+                --conf spark.kubernetes.driver.annotation.prometheus.io/port=4040 \
                 --conf spark.driver.extraJavaOptions=\"-Divy.cache.dir=/tmp -Divy.home=/tmp\" \
                 --conf spark.executor.instances=5 \
                 --conf spark.kubernetes.container.image=pairate/spark-app:0.0.1 \
-                --conf spark.kafka.bootstrap.servers=10.110.241.86:9092 \
+                --conf spark.kafka.bootstrap.servers=10.244.0.175:9092 \
+                --conf spark.metrics.conf=\"/opt/spark/metrics.properties\" \
                 /opt/spark/work-dir/SparkStructured-1.0-SNAPSHOT.jar"
-
-#            - "/opt/spark/bin/spark-submit \
-#                 --class org.example.Main \
-#                 --master local[*] \
-#                 --deploy-mode client \
-#                 --conf spark.kubernetes.container.image=pairate/spark-app:0.0.1 \
-#                 /app/SparkStructured-1.0-SNAPSHOT.jar"
-#
-#apiVersion: apps/v1
-#kind: Deployment
-#metadata:
-#  name: spark-app
-#spec:
-#  replicas: 1
-#  selector:
-#    matchLabels:
-#      app: spark-app
-#  template:
-#    metadata:
-#      labels:
-#        app: spark-app
-#    spec:
-#      containers:
-#        - name: spark-app-container
-#          image: pairate/spark-app:0.0.1
-#          imagePullPolicy: Always
+          volumeMounts:
+            - name: hadoop-config
+              mountPath: /opt/spark/conf
+      volumes:
+        - name: hadoop-config
+          configMap:
+          name: hadoop-config
