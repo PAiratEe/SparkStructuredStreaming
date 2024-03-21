@@ -1,6 +1,6 @@
 package org.example
 
-import org.apache.kafka.clients.producer.{KafkaProducer, ProducerRecord}
+import org.apache.kafka.clients.producer.KafkaProducer
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.streaming.Trigger
@@ -14,46 +14,28 @@ object Main {
 
     val spark = SparkSession.builder()
       .appName("KafkaStreamingApp")
-//      .master("k8s://http://192.168.64.2:30081")
+      //      .master("k8s://http://192.168.64.2:30081")
       .master("local[*]")
       .config("spark.executor.memory", "1g")
       .config("spark.executor.instances", "5")
-//      .config("spark.metrics.namespace", "default")
-//      .config("spark.metrics.conf", "src/main/resources/metrics.properties")
+      //      .config("spark.metrics.namespace", "default")
+      //      .config("spark.metrics.conf", "src/main/resources/metrics.properties")
       .getOrCreate()
 
 
     val props = new Properties()
-    props.put("bootstrap.servers", "10.244.0.175:9092")
+    props.put("bootstrap.servers", "my-cluster-kafka-bootstrap.default.svc:9092")
     props.put("key.serializer", "org.apache.kafka.common.serialization.StringSerializer")
     props.put("value.serializer", "org.apache.kafka.common.serialization.StringSerializer")
 
-    val kafkaServer = "10.244.0.175:9092"
-    val kafkaTopic = "wikimedia_recentchange2"
+    val kafkaServer = "my-cluster-kafka-bootstrap.default.svc:9092"
+    val kafkaTopic = "test"
 
     val maxConnectionAttempts = 10
     var connectionAttempt = 0
 
-//    var producer: Option[KafkaProducer[String, String]] = None
-
-
     val producer = new KafkaProducer[String, String](props)
-
-//    while (connectionAttempt < maxConnectionAttempts && producer.isEmpty) {
-//      try {
-//        // Attempt to create a Kafka consumer
-//        producer = Some(new KafkaProducer[String, String](props))
-//        println("Successfully connected to Kafka broker.")
-//      } catch {
-//        case e: Exception =>
-//          // Handle the exception (e.g., log it)
-//          println(s"Connection attempt $connectionAttempt failed. Retrying...")
-//          connectionAttempt += 1
-//
-//          // Optional: Add a delay before the next attempt
-//          Thread.sleep(5000) // 5 seconds delay
-//      }
-//    }
+//    producer.initTransactions()
 
     val kafkaDF = spark.readStream
       .format("kafka")
@@ -61,6 +43,9 @@ object Main {
       .option("subscribe", kafkaTopic)
       .option("startingOffsets", "latest")
       .load()
+    //      .option("errors.tolerance", "all")
+    //      .option("errors.deadletterqueue.topic.name", "reserve")
+    //      .load()
 
     val jsonSchema = new StructType()
       .add("$schema", StringType)
@@ -101,36 +86,72 @@ object Main {
       .add("wiki", StringType)
       .add("parsedcomment", StringType)
 
-    var parsedDF = kafkaDF
-    try {
-      parsedDF = kafkaDF.selectExpr("CAST(value AS STRING)")
-        .select(from_json(col("value"), jsonSchema).as("json"))
-        .select("json.*")
-      val query = parsedDF.writeStream
-        .trigger(Trigger.ProcessingTime("1 second"))
-        .foreachBatch(processBatch _)
-        .format("console")
-        .start()
-      query.awaitTermination()
-    } catch {
-      case e: Exception =>
-        println("Ошибка " + e.printStackTrace())
-        val record = new ProducerRecord[String, String](kafkaTopic, kafkaDF.toString())
-        producer.send(record)
-    }
-    finally {}
+//    Рабочий код без DLQ
+//    var parsedDF = kafkaDF.selectExpr("CAST(value AS STRING)")
+//      .select(from_json(col("value"), jsonSchema).as("json"))
+//      .select("json.*").writeStream.trigger(Trigger.ProcessingTime("1 second"))
+//
+//    try {
+//      parsedDF.foreachBatch(processBatch _)
+//      ////        .format("console")
+//      //        .start()
+//
+//    } catch {
+//      case e: Exception =>
+//        println("Ошибка " + e.printStackTrace())
+//        val record = new ProducerRecord[String, String]("reserve", kafkaDF.toString())
+//        producer.send(record)
+//    }
+//    finally {
+//      parsedDF.start().awaitTermination()
+//    }
+//
+//    def processBatch(df: DataFrame, batchId: Long): Unit = {
+//      df.write
+//        .format("parquet")
+//        .mode("append")
+//        .save("hdfs://hadoop-hadoop-hdfs-nn.default.svc:9000/") //nn
+//    }
+    val parsedDF = kafkaDF.selectExpr("CAST(value AS STRING)")
+      .select(from_json(col("value"), jsonSchema).as("json"))
+      .select("json.*")
+      .writeStream
+      .foreachBatch { (batchDF: DataFrame, batchId: Long) =>
+        processBatch(batchDF, batchId, producer, "reserve")
+      }
+      .trigger(Trigger.ProcessingTime("1 second"))
+      .start()
 
-    def processBatch(df: DataFrame, batchId: Long): Unit = {
+    parsedDF.awaitTermination()
+
+  }
+
+  def processBatch(df: DataFrame, batchId: Long, producer: KafkaProducer[String, String], dlqTopic: String): Unit = {
+    try {
+      // if
       df.write
         .format("parquet")
         .mode("append")
-        .save("hdfs://192.168.64.2:9000/newKafkaTemplate/")
-    }
+        .save("hdfs://hadoop-hadoop-hdfs-nn.default.svc:9000/") //nn
 
-    val query = parsedDF.writeStream
-      .trigger(Trigger.ProcessingTime("10 seconds"))
-//      .foreachBatch(processBatch _)
-      .format("console")
-      .start()
+      // Commit Kafka offsets only after successful write to HDFS
+      // Note: This is important to ensure that you don't lose data
+      df.selectExpr("CAST(topic AS STRING)", "CAST(partition AS STRING)", "CAST(offset AS STRING)")
+        .write
+        .format("kafka")
+        .option("kafka.bootstrap.servers", "my-cluster-kafka-bootstrap.default.svc:9092")
+        .option("topic", "offsetsTopic")
+        .save()
+    } catch {
+      case e: Exception =>
+        println(s"Error processing batch $batchId: ${e.getMessage}")
+        //Send failed records to DLQ
+        df.selectExpr("CAST(value AS STRING)")
+          .write
+          .format("kafka")
+          .option("kafka.bootstrap.servers", "my-cluster-kafka-bootstrap.default.svc:9092")
+          .option("topic", dlqTopic)
+          .save()
+    }
   }
 }
