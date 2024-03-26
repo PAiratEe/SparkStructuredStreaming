@@ -1,5 +1,5 @@
 apiVersion: apps/v1
-kind: Deployment
+kind: StatefulSet
 metadata:
   name: spark-app
 spec:
@@ -19,28 +19,22 @@ spec:
           command:
             - "/bin/bash"
             - "-c"
-            - "/opt/spark/bin/spark-submit \
-                --master local[*] \
-                --deploy-mode client \
+          args:
+            - |
+              /opt/spark/bin/spark-submit \
+                --master k8s://https://192.168.49.2:8443 \
+                --deploy-mode cluster \
                 --class org.example.Main \
-                --packages org.apache.kafka:kafka-clients:3.5.0 \
-                --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0 \
+                --conf spark.kubernetes.file.upload.path="hdfs://hadoop-hadoop-hdfs-nn.default.svc:9000/spark" \
                 --conf spark.kubernetes.driver.label.monitored-by=prometheus \
                 --conf spark.ui.prometheus.enabled=true \
                 --conf spark.executor.processTreeMetrics.enabled=true \
                 --conf spark.kubernetes.driver.annotation.prometheus.io/scrape=true \
                 --conf spark.kubernetes.driver.annotation.prometheus.io/path=/metrics/executors/prometheus/ \
                 --conf spark.kubernetes.driver.annotation.prometheus.io/port=4040 \
-                --conf spark.driver.extraJavaOptions=\"-Divy.cache.dir=/tmp -Divy.home=/tmp\" \
-                --conf spark.executor.instances=5 \
+                --conf spark.dynamicAllocation.enabled=false \
+                --conf spark.executor.instances=2 \
                 --conf spark.kubernetes.container.image=pairate/spark-app:0.0.1 \
-                --conf spark.kafka.bootstrap.servers=10.244.0.175:9092 \
-                --conf spark.metrics.conf=\"/opt/spark/metrics.properties\" \
-                /opt/spark/work-dir/SparkStructured-1.0-SNAPSHOT.jar"
-          volumeMounts:
-            - name: hadoop-config
-              mountPath: /opt/spark/conf
-      volumes:
-        - name: hadoop-config
-          configMap:
-          name: hadoop-config
+                --conf spark.kafka.bootstrap.servers=my-cluster-kafka-bootstrap.default.svc:9092 \
+                --conf spark.metrics.conf="/opt/spark/metrics.properties" \
+                /opt/spark/work-dir/SparkStructured-1.0-SNAPSHOT.jar

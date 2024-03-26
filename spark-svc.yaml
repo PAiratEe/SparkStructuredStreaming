@@ -1,0 +1,16 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: spark-metrics
+  namespace: default
+  labels:
+    release: kube-prometheus-stack
+spec:
+  selector:
+    matchLabels:
+      spark-app-selector: spark-ad58340f2b19484b904bf53524ddb2c3
+  endpoints:
+    - port: spark-ui
+      path: "/metrics/prometheus/"
+    - port: spark-ui
+      path: "/metrics/executors/prometheus/"

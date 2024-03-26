@@ -1,10 +1,9 @@
 package org.example
 
-import org.apache.kafka.clients.producer.KafkaProducer
-import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.streaming.Trigger
 import org.apache.spark.sql.types._
+import org.apache.spark.sql.{DataFrame, SparkSession}
 
 import java.util.Properties
 
@@ -12,41 +11,50 @@ object Main {
 
   def main(args: Array[String]): Unit = {
 
+    // Создание новой сессии Spark
     val spark = SparkSession.builder()
       .appName("KafkaStreamingApp")
-      //      .master("k8s://http://192.168.64.2:30081")
-      .master("local[*]")
+      .master("k8s://https://192.168.49.2:8443")
+      .config("spark.kubernetes.file.upload.path", "/opt/spark/")
+      .config("spark.kubernetes.authenticate.driver.serviceAccountName", "spark")
       .config("spark.executor.memory", "1g")
-      .config("spark.executor.instances", "5")
-      //      .config("spark.metrics.namespace", "default")
-      //      .config("spark.metrics.conf", "src/main/resources/metrics.properties")
+      .config("spark.dynamicAllocation.enabled", "false")
+      .config("spark.executor.instances", "2") // ставим в конфиге 2 executor'а
+
       .getOrCreate()
 
-
-    val props = new Properties()
-    props.put("bootstrap.servers", "my-cluster-kafka-bootstrap.default.svc:9092")
-    props.put("key.serializer", "org.apache.kafka.common.serialization.StringSerializer")
-    props.put("value.serializer", "org.apache.kafka.common.serialization.StringSerializer")
+    // Создание producer для чтения из Kafka
+    val propsProducer = new Properties()
+    propsProducer.put("bootstrap.servers", "my-cluster-kafka-bootstrap.default.svc:9092")
+    propsProducer.put("key.serializer", "org.apache.kafka.common.serialization.StringSerializer")
+    propsProducer.put("value.serializer", "org.apache.kafka.common.serialization.StringSerializer")
 
     val kafkaServer = "my-cluster-kafka-bootstrap.default.svc:9092"
     val kafkaTopic = "test"
+    val dlqTopic = "reserve"
 
-    val maxConnectionAttempts = 10
-    var connectionAttempt = 0
-
-    val producer = new KafkaProducer[String, String](props)
-//    producer.initTransactions()
-
+    // Создание потока для чтения и обработки из Kafka Topic 1
     val kafkaDF = spark.readStream
       .format("kafka")
       .option("kafka.bootstrap.servers", kafkaServer)
       .option("subscribe", kafkaTopic)
       .option("startingOffsets", "latest")
+      .option("errors.tolerance", "all")
+      .option("errors.deadletterqueue.topic.name", dlqTopic)
       .load()
-    //      .option("errors.tolerance", "all")
-    //      .option("errors.deadletterqueue.topic.name", "reserve")
-    //      .load()
 
+    // Создание потока для чтения и обработки некорректно обработанных сообщения из DLQ
+    val dlqDF = spark.readStream
+      .format("kafka")
+      .option("kafka.bootstrap.servers", kafkaServer)
+      .option("subscribe", "reserve")
+      .option("startingOffsets", "latest")
+      .option("errors.tolerance", "all")
+      .option("errors.deadletterqueue.topic.name", dlqTopic)
+      .load()
+
+
+    // Схема для парсинга сообщений
     val jsonSchema = new StructType()
       .add("$schema", StringType)
       .add("meta", new StructType()
@@ -86,72 +94,45 @@ object Main {
       .add("wiki", StringType)
       .add("parsedcomment", StringType)
 
-//    Рабочий код без DLQ
-//    var parsedDF = kafkaDF.selectExpr("CAST(value AS STRING)")
-//      .select(from_json(col("value"), jsonSchema).as("json"))
-//      .select("json.*").writeStream.trigger(Trigger.ProcessingTime("1 second"))
-//
-//    try {
-//      parsedDF.foreachBatch(processBatch _)
-//      ////        .format("console")
-//      //        .start()
-//
-//    } catch {
-//      case e: Exception =>
-//        println("Ошибка " + e.printStackTrace())
-//        val record = new ProducerRecord[String, String]("reserve", kafkaDF.toString())
-//        producer.send(record)
-//    }
-//    finally {
-//      parsedDF.start().awaitTermination()
-//    }
-//
-//    def processBatch(df: DataFrame, batchId: Long): Unit = {
-//      df.write
-//        .format("parquet")
-//        .mode("append")
-//        .save("hdfs://hadoop-hadoop-hdfs-nn.default.svc:9000/") //nn
-//    }
+
+    // Непосредственная обработка сообщений из основного топика
     val parsedDF = kafkaDF.selectExpr("CAST(value AS STRING)")
       .select(from_json(col("value"), jsonSchema).as("json"))
       .select("json.*")
+      .filter("bot = true")
       .writeStream
       .foreachBatch { (batchDF: DataFrame, batchId: Long) =>
-        processBatch(batchDF, batchId, producer, "reserve")
+        processBatch(batchDF, batchId)
       }
+      .option("checkpointLocation", "hdfs://hadoop-hadoop-hdfs-nn.default.svc:9000/offests") // отправляем оффсеты в hadoop
       .trigger(Trigger.ProcessingTime("1 second"))
       .start()
 
+    // Непосредственная обработка сообщений из DLQ топика
+    val query = dlqDF.selectExpr("CAST(value AS STRING)")
+      .select(from_json(col("value"), jsonSchema).as("json"))
+      .select("json.*")
+      .filter("bot = true")
+      .writeStream
+      .foreachBatch { (batchDF: DataFrame, batchId: Long) =>
+        processBatch(batchDF, batchId)
+      }
+      .option("checkpointLocation", "hdfs://hadoop-hadoop-hdfs-nn.default.svc:9000/dlq_offests") // отправляем оффсеты в hadoop
+      .start()
+
+
     parsedDF.awaitTermination()
+    query.awaitTermination()
 
   }
 
-  def processBatch(df: DataFrame, batchId: Long, producer: KafkaProducer[String, String], dlqTopic: String): Unit = {
-    try {
-      // if
-      df.write
-        .format("parquet")
-        .mode("append")
-        .save("hdfs://hadoop-hadoop-hdfs-nn.default.svc:9000/") //nn
+  // Метод для сохранения обработанных сообщений в hadoop
+  def processBatch(df: DataFrame, id: Long): Unit = {
+    df.show()
 
-      // Commit Kafka offsets only after successful write to HDFS
-      // Note: This is important to ensure that you don't lose data
-      df.selectExpr("CAST(topic AS STRING)", "CAST(partition AS STRING)", "CAST(offset AS STRING)")
-        .write
-        .format("kafka")
-        .option("kafka.bootstrap.servers", "my-cluster-kafka-bootstrap.default.svc:9092")
-        .option("topic", "offsetsTopic")
-        .save()
-    } catch {
-      case e: Exception =>
-        println(s"Error processing batch $batchId: ${e.getMessage}")
-        //Send failed records to DLQ
-        df.selectExpr("CAST(value AS STRING)")
-          .write
-          .format("kafka")
-          .option("kafka.bootstrap.servers", "my-cluster-kafka-bootstrap.default.svc:9092")
-          .option("topic", dlqTopic)
-          .save()
-    }
+    df.write
+      .format("parquet")
+      .mode("append")
+      .save("hdfs://hadoop-hadoop-hdfs-nn.default.svc:9000/data") // прописываем адрес NameNode
   }
 }
