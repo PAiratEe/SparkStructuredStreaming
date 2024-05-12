@@ -5,7 +5,8 @@ import org.apache.spark.sql.streaming.Trigger
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.{DataFrame, SparkSession}
 
-import java.util.Properties
+import java.io.PrintWriter
+import java.util.{Properties, Timer, TimerTask}
 
 object Main {
 
@@ -120,6 +121,27 @@ object Main {
       .option("checkpointLocation", "hdfs://hadoop-hadoop-hdfs-nn.default.svc:9000/dlq_offests") // отправляем оффсеты в hadoop
       .start()
 
+    def countAndSave(): Unit = {
+      val messageCount = kafkaDF.count() + dlqDF.count()
+      val outputFilePath =" hdfs://hadoop-hadoop-hdfs-nn.default.svc:9000/count/message_count.txt"
+
+      // Запись количества сообщений в текстовый файл
+      val writer = new PrintWriter(outputFilePath)
+      writer.println(messageCount)
+      writer.close()
+
+      println(s"Message count saved to $outputFilePath")
+    }
+
+    // Запуск задачи каждые 30 минут
+    val timer = new Timer()
+    val task = new TimerTask {
+      def run(): Unit = {
+        countAndSave()
+      }
+    }
+    val interval = 30 * 60 * 1000
+    timer.schedule(task, 0, interval)
 
     parsedDF.awaitTermination()
     query.awaitTermination()
