@@ -1,4 +1,4 @@
-# ETL-коннвейер с использованием Spark Structured Streaming
+# ETL-конвейер с использованием Spark Structured Streaming
 
 Этот репозиторий содержит проект ETL-пайплайна для обработки потоковых данных с использованием **Apache Spark Structured Streaming**. Данные берутся из **Apache Kafka**, обрабатываются с помощью **Spark**, и результаты сохраняются в **Hadoop HDFS** для дальнейшего анализа.
 
